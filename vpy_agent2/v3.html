@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Python Agent WS 测试</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #111827;
+      color: #f3f4f6;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 760px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    h1 { font-size: 1.15rem; font-weight: 650; }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #9ca3af;
+      font-size: 0.86rem;
+      min-width: 92px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #6b7280;
+      flex-shrink: 0;
+    }
+
+    .dot.connected { background: #22c55e; }
+    .dot.connecting { background: #f59e0b; animation: pulse 1s infinite; }
+    .dot.error { background: #ef4444; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    .toolbar { display: flex; gap: 8px; }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 13px;
+      font-size: 0.86rem;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    .btn-secondary { background: #263244; color: #f3f4f6; }
+    .btn-secondary:hover { background: #334155; }
+    .btn-primary {
+      background: #2563eb;
+      color: #fff;
+      font-weight: 600;
+      min-width: 64px;
+    }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { background: #374151; color: #9ca3af; cursor: not-allowed; }
+
+    .chat {
+      min-height: 430px;
+      max-height: 62vh;
+      overflow-y: auto;
+      background: #172033;
+      border: 1px solid #2f3b52;
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat::-webkit-scrollbar { width: 6px; }
+    .chat::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+
+    .msg {
+      max-width: 86%;
+      padding: 10px 13px;
+      border-radius: 8px;
+      line-height: 1.55;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .msg.user { align-self: flex-end; background: #1f5eff; }
+    .msg.assistant { align-self: flex-start; background: #263244; }
+    .msg.error {
+      align-self: center;
+      max-width: 100%;
+      background: #3f1d24;
+      color: #fecaca;
+      border: 1px solid #7f1d1d;
+      font-size: 0.86rem;
+    }
+    .msg.system {
+      align-self: center;
+      color: #9ca3af;
+      padding: 2px 0;
+      font-size: 0.8rem;
+    }
+    .msg.render {
+      align-self: flex-start;
+      max-width: 100%;
+      background: #1a2333;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      font-size: 0.82rem;
+    }
+
+    .input-area { display: flex; gap: 10px; align-items: flex-end; }
+
+    textarea {
+      flex: 1;
+      resize: none;
+      border: 1px solid #2f3b52;
+      border-radius: 8px;
+      background: #172033;
+      color: #f3f4f6;
+      padding: 12px 13px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      line-height: 1.45;
+      min-height: 47px;
+      max-height: 126px;
+      outline: none;
+    }
+
+    textarea:focus { border-color: #3b82f6; }
+    textarea:disabled { opacity: 0.55; }
+
+    .options {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.84rem;
+      color: #9ca3af;
+    }
+
+    .options label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    .hint {
+      color: #6b7280;
+      font-size: 0.76rem;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .log {
+      min-height: 74px;
+      max-height: 120px;
+      overflow-y: auto;
+      border: 1px solid #2f3b52;
+      border-radius: 8px;
+      background: #0f172a;
+      color: #94a3b8;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.76rem;
+      line-height: 1.45;
+      padding: 9px 11px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media (max-width: 560px) {
+      header { flex-wrap: wrap; }
+      .status { margin-left: auto; }
+      .toolbar { width: 100%; }
+      .toolbar button { flex: 1; }
+      .msg { max-width: 92%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Python Agent WS 测试</h1>
+      <div class="status">
+        <span class="dot" id="dot"></span>
+        <span id="statusText">未连接</span>
+      </div>
+      <div class="toolbar">
+        <button class="btn-secondary" id="btnConnect">连接</button>
+        <button class="btn-secondary" id="btnClear">清空</button>
+      </div>
+    </header>
+
+    <div class="chat" id="chat"></div>
+
+    <div class="input-area">
+      <textarea id="input" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行" disabled></textarea>
+      <button class="btn-primary" id="btnSend" disabled>发送</button>
+    </div>
+
+    <div class="options">
+      <label>
+        <input type="checkbox" id="replyAudioChk" />
+        语音回复（header.optional_out_format = audio_stream）
+      </label>
+    </div>
+
+    <p class="hint">InMsg / OutMsg：{ header, data: { type, event, detail } }，默认 ws://127.0.0.1:9999/ws</p>
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    const WS_URL = location.host
+      ? `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`
+      : "ws://127.0.0.1:9999/ws";
+
+    const USER_ID = "test_user";
+    const SESSION_ID = "test_session";
+    const STREAM_LEAD_SEC = 0.05;
+
+    const chat = document.getElementById("chat");
+    const input = document.getElementById("input");
+    const btnSend = document.getElementById("btnSend");
+    const btnConnect = document.getElementById("btnConnect");
+    const btnClear = document.getElementById("btnClear");
+    const dot = document.getElementById("dot");
+    const statusText = document.getElementById("statusText");
+    const log = document.getElementById("log");
+    const replyAudioChk = document.getElementById("replyAudioChk");
+
+    let ws = null;
+    let waiting = false;
+    let loadingEl = null;
+
+    // 输出音频播放（ai_audio_stream）
+    let audioCtxOut = null;
+    let outMeta = null;
+    let streamActive = false;
+    let outNextTime = 0;
+
+    function makeHeader() {
+      const wantAudio = replyAudioChk.checked;
+      return {
+        channel: "web",
+        user_id: USER_ID,
+        session_id: SESSION_ID,
+        required_out_format: "text",
+        optional_out_format: wantAudio ? "audio_stream" : null,
+      };
+    }
+
+    function setStatus(state, text) {
+      dot.className = "dot " + state;
+      statusText.textContent = text;
+    }
+
+    function addLog(text) {
+      const now = new Date().toLocaleTimeString();
+      log.textContent += `[${now}] ${text}\n`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function appendMsg(role, text) {
+      const el = document.createElement("div");
+      el.className = "msg " + role;
+      el.textContent = text;
+      chat.appendChild(el);
+      chat.scrollTop = chat.scrollHeight;
+      return el;
+    }
+
+    function detailToText(detail) {
+      if (detail === null || detail === undefined) return "";
+      if (typeof detail === "object") {
+        try { return JSON.stringify(detail, null, 2); } catch { return String(detail); }
+      }
+      return String(detail);
+    }
+
+    function showLoading() {
+      if (loadingEl) return;
+      loadingEl = appendMsg("assistant", "思考中...");
+    }
+
+    function hideLoading() {
+      if (loadingEl) {
+        loadingEl.remove();
+        loadingEl = null;
+      }
+    }
+
+    function setInputEnabled(enabled) {
+      input.disabled = !enabled;
+      btnSend.disabled = !enabled || waiting;
+    }
+
+    function finishWaiting() {
+      hideLoading();
+      waiting = false;
+      setInputEnabled(true);
+    }
+
+    function resetAudioStream() {
+      streamActive = false;
+      outMeta = null;
+      outNextTime = 0;
+    }
+
+    async function ensureAudioCtx() {
+      if (!audioCtxOut) {
+        audioCtxOut = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      try { await audioCtxOut.resume(); } catch { /* ignore */ }
+      return audioCtxOut;
+    }
+
+    function pcmChunkToAudioBuffer(ctx, arrayBuffer, meta) {
+      const ch = meta.channels;
+      const sr = meta.sample_rate;
+      let bytes = new Uint8Array(arrayBuffer);
+      const frameBytes = ch * 2;
+      if (bytes.byteLength % frameBytes !== 0) {
+        bytes = bytes.subarray(0, bytes.byteLength - (bytes.byteLength % frameBytes));
+      }
+      if (bytes.byteLength === 0) return null;
+
+      const pcm16 = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+      const frameCount = pcm16.length / ch;
+      const audioBuffer = ctx.createBuffer(ch, frameCount, sr);
+
+      if (ch === 1) {
+        const mono = new Float32Array(frameCount);
+        for (let i = 0; i < frameCount; i++) mono[i] = pcm16[i] / 0x8000;
+        audioBuffer.copyToChannel(mono, 0);
+      } else {
+        const left = new Float32Array(frameCount);
+        const right = new Float32Array(frameCount);
+        for (let i = 0, j = 0; j < frameCount; j++, i += ch) {
+          left[j] = pcm16[i] / 0x8000;
+          right[j] = pcm16[i + 1] / 0x8000;
+        }
+        audioBuffer.copyToChannel(left, 0);
+        audioBuffer.copyToChannel(right, 1);
+      }
+      return audioBuffer;
+    }
+
+    async function beginOutputAudio(meta) {
+      const ctx = await ensureAudioCtx();
+      outMeta = {
+        sample_rate: Number(meta.sample_rate || 24000),
+        channels: Number(meta.channels || 1),
+        format: String(meta.format || "pcm_s16le"),
+      };
+      streamActive = true;
+      outNextTime = ctx.currentTime + STREAM_LEAD_SEC;
+      addLog("ai_audio_stream outputStart");
+    }
+
+    async function schedulePcmChunk(arrayBuffer) {
+      if (!streamActive || !outMeta) return;
+
+      const ctx = await ensureAudioCtx();
+      const audioBuffer = pcmChunkToAudioBuffer(ctx, arrayBuffer, outMeta);
+      if (!audioBuffer) return;
+
+      const startAt = Math.max(ctx.currentTime, outNextTime);
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(ctx.destination);
+      source.start(startAt);
+      outNextTime = startAt + audioBuffer.duration;
+    }
+
+    function endOutputAudio() {
+      streamActive = false;
+      outMeta = null;
+      addLog("ai_audio_stream outputEnd");
+    }
+
+    function handleOutMsg(envelope) {
+      const payload = envelope.data || {};
+      const msgType = payload.type;
+      const event = payload.event;
+      const detail = payload.detail;
+
+      addLog(`<- ${msgType}/${event}`);
+
+      if (msgType === "render") {
+        if (event === "thinking") {
+          showLoading();
+          return;
+        }
+        appendMsg("render", `[${event}] ${detailToText(detail)}`);
+        return;
+      }
+
+      if (msgType === "error") {
+        finishWaiting();
+        resetAudioStream();
+        appendMsg("error", event + (detail ? ": " + detailToText(detail) : ""));
+        return;
+      }
+
+      if (msgType === "ai_audio" && event === "output") {
+        addLog("ai_audio/output（等待 TTS 分片）");
+        return;
+      }
+
+      if (msgType === "asr_return" && event === "output") {
+        const text = (detail && detail.content) || "";
+        if (text) appendMsg("user", text + " (ASR)");
+        return;
+      }
+
+      if (msgType === "ai_text" && event === "output") {
+        finishWaiting();
+        appendMsg("assistant", (detail && detail.content) || "(空回复)");
+        return;
+      }
+
+      if (msgType === "ai_audio_stream" && event === "outputStart") {
+        beginOutputAudio(detail || {});
+        return;
+      }
+
+      if (msgType === "ai_audio_stream" && event === "outputEnd") {
+        endOutputAudio();
+        finishWaiting();
+        return;
+      }
+
+      appendMsg("error", "未知 OutMsg: " + JSON.stringify(envelope));
+    }
+
+    function connect() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
+      setStatus("connecting", "连接中...");
+      btnConnect.textContent = "连接中...";
+      btnConnect.disabled = true;
+      addLog("connect -> " + WS_URL);
+
+      ws = new WebSocket(WS_URL);
+      ws.binaryType = "arraybuffer";
+
+      ws.onopen = () => {
+        setStatus("connected", "已连接");
+        btnConnect.textContent = "断开";
+        btnConnect.disabled = false;
+        setInputEnabled(true);
+        appendMsg("system", "WebSocket 已连接");
+        addLog("open");
+        input.focus();
+      };
+
+      ws.onmessage = (ev) => {
+        if (ev.data instanceof ArrayBuffer) {
+          schedulePcmChunk(ev.data);
+          return;
+        }
+
+        let envelope;
+        try {
+          envelope = JSON.parse(ev.data);
+        } catch {
+          appendMsg("error", "收到无效 JSON: " + ev.data);
+          return;
+        }
+
+        handleOutMsg(envelope);
+      };
+
+      ws.onerror = () => {
+        setStatus("error", "连接错误");
+        addLog("error -> 请看服务端是否已启动");
+      };
+
+      ws.onclose = (ev) => {
+        finishWaiting();
+        resetAudioStream();
+        setStatus("", "未连接");
+        btnConnect.textContent = "连接";
+        btnConnect.disabled = false;
+        setInputEnabled(false);
+        ws = null;
+        appendMsg("system", "WebSocket 已断开");
+        addLog(`close -> code=${ev.code}, reason=${ev.reason || "(empty)"}`);
+      };
+    }
+
+    function disconnect() {
+      if (ws) ws.close();
+    }
+
+    function send() {
+      const text = input.value.trim();
+      if (!text || !ws || ws.readyState !== WebSocket.OPEN || waiting) return;
+
+      ws.send(JSON.stringify({
+        header: makeHeader(),
+        data: { type: "user_text", event: "input", detail: { content: text } },
+      }));
+      addLog("send -> user_text/input");
+
+      appendMsg("user", text);
+      input.value = "";
+      input.style.height = "auto";
+
+      waiting = true;
+      setInputEnabled(true);
+      showLoading();
+    }
+
+    btnConnect.addEventListener("click", () => {
+      if (ws && ws.readyState === WebSocket.OPEN) disconnect();
+      else connect();
+    });
+
+    btnSend.addEventListener("click", send);
+
+    btnClear.addEventListener("click", () => {
+      chat.innerHTML = "";
+      log.textContent = "";
+      hideLoading();
+      resetAudioStream();
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+
+    input.addEventListener("input", () => {
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 126) + "px";
+    });
+
+    addLog("ready，点击连接按钮开始 ws 连接");
+  </script>
+</body>
+</html>
