@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Go WS Chat 测试</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #111827;
+      color: #f3f4f6;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 760px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    h1 {
+      font-size: 1.15rem;
+      font-weight: 650;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #9ca3af;
+      font-size: 0.86rem;
+      min-width: 92px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #6b7280;
+      flex-shrink: 0;
+    }
+
+    .dot.connected { background: #22c55e; }
+    .dot.connecting { background: #f59e0b; animation: pulse 1s infinite; }
+    .dot.error { background: #ef4444; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 13px;
+      font-size: 0.86rem;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    .btn-secondary {
+      background: #263244;
+      color: #f3f4f6;
+    }
+
+    .btn-secondary:hover { background: #334155; }
+
+    .btn-primary {
+      background: #2563eb;
+      color: #fff;
+      font-weight: 600;
+      min-width: 64px;
+    }
+
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { background: #374151; color: #9ca3af; cursor: not-allowed; }
+
+    .chat {
+      min-height: 430px;
+      max-height: 62vh;
+      overflow-y: auto;
+      background: #172033;
+      border: 1px solid #2f3b52;
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat::-webkit-scrollbar { width: 6px; }
+    .chat::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+
+    .msg {
+      max-width: 86%;
+      padding: 10px 13px;
+      border-radius: 8px;
+      line-height: 1.55;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .msg.user {
+      align-self: flex-end;
+      background: #1f5eff;
+    }
+
+    .msg.assistant {
+      align-self: flex-start;
+      background: #263244;
+    }
+
+    .msg.error {
+      align-self: center;
+      max-width: 100%;
+      background: #3f1d24;
+      color: #fecaca;
+      border: 1px solid #7f1d1d;
+      font-size: 0.86rem;
+    }
+
+    .msg.system {
+      align-self: center;
+      color: #9ca3af;
+      padding: 2px 0;
+      font-size: 0.8rem;
+    }
+
+    .input-area {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    textarea {
+      flex: 1;
+      resize: none;
+      border: 1px solid #2f3b52;
+      border-radius: 8px;
+      background: #172033;
+      color: #f3f4f6;
+      padding: 12px 13px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      line-height: 1.45;
+      min-height: 47px;
+      max-height: 126px;
+      outline: none;
+    }
+
+    textarea:focus { border-color: #3b82f6; }
+    textarea:disabled { opacity: 0.55; }
+
+    .hint {
+      color: #6b7280;
+      font-size: 0.76rem;
+      text-align: center;
+    }
+
+    .log {
+      min-height: 74px;
+      max-height: 120px;
+      overflow-y: auto;
+      border: 1px solid #2f3b52;
+      border-radius: 8px;
+      background: #0f172a;
+      color: #94a3b8;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.76rem;
+      line-height: 1.45;
+      padding: 9px 11px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media (max-width: 560px) {
+      header { flex-wrap: wrap; }
+      .status { margin-left: auto; }
+      .toolbar { width: 100%; }
+      .toolbar button { flex: 1; }
+      .msg { max-width: 92%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Go WS Chat 测试</h1>
+      <div class="status">
+        <span class="dot" id="dot"></span>
+        <span id="statusText">未连接</span>
+      </div>
+      <div class="toolbar">
+        <button class="btn-secondary" id="btnConnect">连接</button>
+        <button class="btn-secondary" id="btnClear">清空</button>
+      </div>
+    </header>
+
+    <div class="chat" id="chat"></div>
+
+    <div class="input-area">
+      <textarea id="input" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行" disabled></textarea>
+      <button class="btn-primary" id="btnSend" disabled>发送</button>
+    </div>
+
+    <p class="hint">GET / 打开此页，WebSocket 连接 /ws，只传文本消息</p>
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    const WS_URL = location.host ? `ws://${location.host}/ws` : "ws://127.0.0.1:8080/ws";
+
+    const chat = document.getElementById("chat");
+    const input = document.getElementById("input");
+    const btnSend = document.getElementById("btnSend");
+    const btnConnect = document.getElementById("btnConnect");
+    const btnClear = document.getElementById("btnClear");
+    const dot = document.getElementById("dot");
+    const statusText = document.getElementById("statusText");
+    const log = document.getElementById("log");
+
+    let ws = null;
+    let waiting = false;
+    let loadingEl = null;
+
+    function setStatus(state, text) {
+      dot.className = "dot " + state;
+      statusText.textContent = text;
+    }
+
+    function addLog(text) {
+      const now = new Date().toLocaleTimeString();
+      log.textContent += `[${now}] ${text}\n`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function appendMsg(role, text) {
+      const el = document.createElement("div");
+      el.className = "msg " + role;
+      el.textContent = text;
+      chat.appendChild(el);
+      chat.scrollTop = chat.scrollHeight;
+      return el;
+    }
+
+    function showLoading() {
+      loadingEl = appendMsg("assistant", "思考中...");
+    }
+
+    function hideLoading() {
+      if (loadingEl) {
+        loadingEl.remove();
+        loadingEl = null;
+      }
+    }
+
+    function setInputEnabled(enabled) {
+      input.disabled = !enabled;
+      btnSend.disabled = !enabled || waiting;
+    }
+
+    function connect() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
+      setStatus("connecting", "连接中...");
+      btnConnect.textContent = "连接中...";
+      btnConnect.disabled = true;
+      addLog("connect -> " + WS_URL);
+
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => {
+        setStatus("connected", "已连接");
+        btnConnect.textContent = "断开";
+        btnConnect.disabled = false;
+        setInputEnabled(true);
+        appendMsg("system", "WebSocket 已连接");
+        addLog("open");
+        input.focus();
+      };
+
+      ws.onmessage = (ev) => {
+        addLog("message <- " + ev.data.slice(0, 160));
+        hideLoading();
+        waiting = false;
+        setInputEnabled(true);
+
+        let data;
+        try {
+          data = JSON.parse(ev.data);
+        } catch {
+          appendMsg("error", "收到无效 JSON: " + ev.data);
+          return;
+        }
+
+        if (data.type === "message") {
+          appendMsg("assistant", data.content || "(空回复)");
+          return;
+        }
+        if (data.type === "error") {
+          appendMsg("error", data.error || "未知错误");
+          return;
+        }
+        appendMsg("error", "未知消息类型: " + JSON.stringify(data));
+      };
+
+      ws.onerror = (ev) => {
+        setStatus("error", "连接错误");
+        addLog("error -> 浏览器未提供详细错误，请看服务端是否打印 upgrade error");
+      };
+
+      ws.onclose = (ev) => {
+        hideLoading();
+        waiting = false;
+        setStatus("", "未连接");
+        btnConnect.textContent = "连接";
+        btnConnect.disabled = false;
+        setInputEnabled(false);
+        ws = null;
+        appendMsg("system", "WebSocket 已断开");
+        addLog(`close -> code=${ev.code}, reason=${ev.reason || "(empty)"}`);
+      };
+    }
+
+    function disconnect() {
+      if (ws) {
+        ws.close();
+      }
+    }
+
+    function send() {
+      const text = input.value.trim();
+      if (!text || !ws || ws.readyState !== WebSocket.OPEN || waiting) return;
+
+      const payload = {
+        channel: "cmd",
+        user_id: "test_user",
+        session_id: "test_session",
+        content: text,
+        in_type: "text",
+        out_type: "text",
+      };
+      ws.send(JSON.stringify(payload));
+      addLog("send -> " + JSON.stringify(payload));
+
+      appendMsg("user", text);
+      input.value = "";
+      input.style.height = "auto";
+
+      waiting = true;
+      setInputEnabled(true);
+      showLoading();
+    }
+
+    btnConnect.addEventListener("click", () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        disconnect();
+      } else {
+        connect();
+      }
+    });
+
+    btnSend.addEventListener("click", send);
+
+    btnClear.addEventListener("click", () => {
+      chat.innerHTML = "";
+      log.textContent = "";
+      hideLoading();
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+
+    input.addEventListener("input", () => {
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 126) + "px";
+    });
+    addLog("ready，点击连接按钮开始 ws 连接");
+  </script>
+</body>
+</html>
