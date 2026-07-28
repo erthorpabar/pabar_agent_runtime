@@ -1,0 +1,22 @@
+
+# 安装: pip install -r requirements.txt
+
+# Web 服务
+fastapi>=0.100.0
+uvicorn[standard]>=0.22.0
+
+# HTTP / 外部 API（TTS、ASR、LLM）
+aiohttp>=3.9.0
+httpx>=0.25.0
+anthropic>=0.18.0
+
+# 配置
+python-dotenv>=1.0.0
+pydantic-settings>=2.0.0
+
+# 局域网 mDNS / 网卡枚举
+zeroconf>=0.131.0
+netifaces>=0.11.0
+
+# 仅 test_tts.py / test_asr.py 使用
+requests>=2.31.0

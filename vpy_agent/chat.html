@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream ASR/TTS Chat</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #16213e;
+            padding: 12px 20px;
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #666; }
+        .status-dot.connected { background: #4ade80; }
+        .status-dot.connecting { background: #fbbf24; animation: pulse 1s infinite; }
+        .status-dot.error { background: #f87171; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        .connect-form { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .connect-form input {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: #e0e0e0;
+            font-size: 14px;
+            width: 240px;
+            outline: none;
+        }
+        .connect-form button {
+            background: #4ade80;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            color: #0f172a;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .connect-form button.disconnect { background: #f87171; }
+        .print-btn {
+            background: none;
+            border: 1px solid #475569;
+            color: #94a3b8;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all .2s;
+        }
+        .print-btn:hover { border-color: #60a5fa; color: #60a5fa; }
+
+        .chat-container { flex: 1; overflow-y: auto; padding: 20px; }
+        .messages { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+        .message { display: flex; gap: 12px; }
+        .message.user { flex-direction: row-reverse; }
+        .avatar {
+            width: 32px; height: 32px; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; font-weight: 600; flex-shrink: 0;
+        }
+        .message.user .avatar { background: #3b82f6; }
+        .message.assistant .avatar { background: #8b5cf6; }
+        .message.system .avatar { background: #6b7280; }
+        .message-content {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            line-height: 1.5;
+        }
+        .message.user .message-content { background: #3b82f6; border-top-right-radius: 4px; }
+        .message.assistant .message-content { background: #2d3748; border-top-left-radius: 4px; }
+        .message.system .message-content {
+            background: #374151; max-width: 100%; text-align: center;
+            font-size: 13px; color: #9ca3af;
+        }
+
+        /* tool 流式块：参照 a01_character/chat.html */
+        .tool-stream-item {
+            max-width: 900px;
+            margin: 0 auto 10px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .tool-stream-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 14px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .tool-stream-header:hover { background: #273449; }
+        .tool-stream-badge {
+            flex-shrink: 0;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: #334155;
+            color: #94a3b8;
+        }
+        .tool-kind-purpose .tool-stream-badge { background: #4c1d95; color: #e9d5ff; }
+        .tool-kind-tool .tool-stream-badge { background: #1e3a5f; color: #93c5fd; }
+        .tool-kind-result .tool-stream-badge { background: #14532d; color: #bbf7d0; }
+        .tool-stream-preview {
+            flex: 1;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            color: #e2e8f0;
+            word-break: break-all;
+            line-height: 1.45;
+        }
+        .tool-stream-chevron {
+            flex-shrink: 0;
+            color: #64748b;
+            font-size: 12px;
+            transition: transform 0.2s;
+        }
+        .tool-stream-item.expanded .tool-stream-chevron { transform: rotate(180deg); }
+        .tool-stream-body {
+            display: none;
+            border-top: 1px solid #334155;
+            padding: 12px 14px;
+            background: #0f172a;
+            max-height: 320px;
+            overflow-y: auto;
+        }
+        .tool-stream-item.expanded .tool-stream-body { display: block; }
+        .tool-stream-body pre {
+            margin: 0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            color: #cbd5e1;
+            line-height: 1.5;
+        }
+        .md-body { line-height: 1.7; font-size: 14px; word-break: break-word; }
+        .md-body code {
+            font-family: 'Consolas','Monaco','Courier New',monospace;
+            background: rgba(255,255,255,0.08);
+            padding: 2px 6px; border-radius: 4px;
+            font-size: 0.9em; color: #f0abfc;
+        }
+        .md-body pre {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin: 0.6em 0;
+            overflow-x: auto;
+        }
+        .md-body pre code { background: none; padding: 0; font-size: 13px; color: #e2e8f0; line-height: 1.55; }
+
+        .thinking {
+            display: flex; align-items: center; gap: 8px;
+            padding: 12px 16px; color: #9ca3af; font-size: 14px;
+            max-width: 900px; margin: 0 auto;
+        }
+        .thinking-dots { display: flex; gap: 4px; }
+        .thinking-dots span {
+            width: 6px; height: 6px; background: #6b7280; border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .thinking-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .thinking-dots span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+        .input-area { background: #16213e; border-top: 1px solid #0f3460; padding: 16px 20px; }
+        .input-wrapper { max-width: 900px; margin: 0 auto; display: flex; gap: 12px; align-items: center; }
+        .input-wrapper textarea {
+            flex: 1;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: #e0e0e0;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+            font-family: inherit;
+        }
+        .input-wrapper textarea:focus { border-color: #3b82f6; }
+        .input-wrapper button {
+            background: #3b82f6;
+            border: none;
+            border-radius: 8px;
+            padding: 0 18px;
+            height: 42px;
+            color: white;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+        .input-wrapper button:hover { background: #2563eb; }
+        .input-wrapper button:disabled { background: #4b5563; cursor: not-allowed; }
+        #micBtn { background: #0ea5e9; }
+        #micBtn:hover { background: #0284c7; }
+        .mini-toggle { display: flex; align-items: center; gap: 6px; color: #cbd5e1; font-size: 13px; user-select: none; }
+        .mini-toggle input { accent-color: #3b82f6; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Stream ASR/TTS</h1>
+        <div class="status">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">未连接</span>
+        </div>
+        <div class="connect-form">
+            <input type="text" id="wsUrl" value="ws://localhost:9999/ws" placeholder="WebSocket URL">
+            <button id="connectBtn" onclick="toggleConnection()">连接</button>
+            <button class="print-btn" onclick="window.print()">🖨 打印</button>
+        </div>
+    </div>
+
+    <div class="chat-container">
+        <div class="messages" id="messages"></div>
+    </div>
+
+    <div class="input-area">
+        <div class="input-wrapper">
+            <textarea id="userInput" rows="2" placeholder="输入消息..." onkeydown="handleKeydown(event)"></textarea>
+            <button id="micBtn" onmousedown="startMicPress()" onmouseup="stopMicPress()" onmouseleave="stopMicPress()" ontouchstart="startMicPress()" ontouchend="stopMicPress()" disabled>按住说话</button>
+            <label class="mini-toggle">
+                <input type="checkbox" id="replyAudioChk">
+                语音回复
+            </label>
+            <button id="sendBtn" onclick="sendMessage()" disabled>发送</button>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+
+        // ====== 输入：麦克风 PCM 流 ======
+        let micStream = null;
+        let audioCtxIn = null;
+        let processor = null;
+        let micRecording = false;
+        let micPressing = false;
+
+        // ====== 输出：PCM 播放队列 ======
+        let audioCtxOut = null;
+        let outMeta = null; // {sample_rate, channels, format}
+        let outQueue = [];  // ArrayBuffer chunks
+        let outPlaying = false;
+        let outNextTime = 0;
+
+        // ====== 连接 ======
+        function toggleConnection() {
+            if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+            else connect();
+        }
+
+        function connect() {
+            const url = document.getElementById('wsUrl').value;
+            setStatus('connecting', '连接中...');
+            try {
+                ws = new WebSocket(url);
+                ws.binaryType = 'arraybuffer';
+
+                ws.onopen = () => {
+                    setStatus('connected', '已连接');
+                    document.getElementById('connectBtn').textContent = '断开';
+                    document.getElementById('connectBtn').classList.add('disconnect');
+                    document.getElementById('sendBtn').disabled = false;
+                    document.getElementById('micBtn').disabled = false;
+                };
+
+                ws.onclose = () => {
+                    setStatus('disconnected', '已断开');
+                    document.getElementById('connectBtn').textContent = '连接';
+                    document.getElementById('connectBtn').classList.remove('disconnect');
+                    document.getElementById('sendBtn').disabled = true;
+                    document.getElementById('micBtn').disabled = true;
+                    stopMicIfNeeded();
+                };
+
+                ws.onerror = () => setStatus('error', '连接错误');
+
+                ws.onmessage = async (event) => {
+                    // 文本帧：JSON
+                    if (typeof event.data === 'string') {
+                        const data = JSON.parse(event.data);
+                        if (data && data.out_type === 'output_audio_start') { beginOutputAudio(data.data || {}); return; }
+                        if (data && data.out_type === 'output_audio_end') { endOutputAudio(); return; }
+                        handleMessage(data);
+                        return;
+                    }
+                    // 二进制帧：PCM
+                    if (event.data instanceof ArrayBuffer) {
+                        enqueueOutputPcmChunk(event.data);
+                    }
+                };
+            } catch (e) {
+                setStatus('error', '连接失败');
+            }
+        }
+
+        function setStatus(state, text) {
+            const dot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            dot.className = 'status-dot';
+            if (state === 'connected') dot.classList.add('connected');
+            else if (state === 'connecting') dot.classList.add('connecting');
+            else if (state === 'error') dot.classList.add('error');
+            statusText.textContent = text;
+        }
+
+        // ====== UI 消息 ======
+        function handleMessage(data) {
+            if (!data || !data.type) return;
+            if (data.type === 'status') {
+                if (data.symbol === 'thinking') {
+                    showThinking();
+                } else if (data.symbol === 'api_or_network_error') {
+                    removeThinking();
+                    addMessage('system', 'API 或网络错误');
+                } else if (data.symbol === 'out of tokens') {
+                    removeThinking();
+                    addMessage('system', 'Token 超出限制');
+                } else {
+                    removeThinking();
+                    addMessage('system', '状态：' + String(data.symbol ?? 'unknown'));
+                }
+                return;
+            }
+            // 只有这条当作 AI 的回复气泡
+            if (data.type === 'assistant') {
+                addMessage('assistant', String(data.content ?? ''));
+                removeThinking();
+                return;
+            }
+            if (data.type === 'tool') {
+                addToolStreamItem(data);
+                return;
+            }
+            // 其它类型统一按居中显示（不是 AI 回复）
+            addMessage('system', String(data.type) + '\n' + toolContentToText(data.content));
+        }
+
+        function addMessage(role, content) {
+            const container = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            const avatarText = role === 'user' ? 'U' : (role === 'assistant' ? 'AI' : 'S');
+            let bodyHtml;
+            if (role === 'assistant') {
+                try { bodyHtml = '<div class="md-body">' + marked.parse(content) + '</div>'; }
+                catch (e) { bodyHtml = '<div class="md-body">' + escapeHtml(content) + '</div>'; }
+            } else {
+                bodyHtml = escapeHtml(content);
+            }
+            div.innerHTML = `
+                <div class="avatar">${avatarText}</div>
+                <div class="message-content">${bodyHtml}</div>
+            `;
+            container.appendChild(div);
+            scrollToBottom();
+        }
+
+        function toolContentToText(content) {
+            if (content === null || content === undefined) return '';
+            if (typeof content === 'object') {
+                try { return JSON.stringify(content, null, 2); } catch (e) { return String(content); }
+            }
+            return String(content);
+        }
+
+        function toolBadgeLabel(kind) {
+            const m = { purpose: '目的', tool: '工具', result: '结果', unknown: '工具' };
+            return m[kind] || m.unknown;
+        }
+
+        function firstLinePreview(text, maxLen) {
+            const line = String(text).split('\n')[0].trim() || '(空)';
+            const n = maxLen || 120;
+            return line.length > n ? line.substring(0, n) + '…' : line;
+        }
+
+        function toolStreamPreview(bodyText, rawContent, maxLen) {
+            const n = maxLen || 140;
+            if (rawContent !== null && rawContent !== undefined && typeof rawContent === 'object') {
+                try {
+                    const oneLine = JSON.stringify(rawContent);
+                    return oneLine.length > n ? oneLine.substring(0, n) + '…' : oneLine;
+                } catch (e) { /* fall through */ }
+            }
+            const lines = String(bodyText).split('\n').map(function (l) { return l.trim(); });
+            const nonEmpty = lines.filter(function (l) { return l.length; });
+            if (nonEmpty.length === 0) return '(空)';
+            if (nonEmpty[0] === '{' || nonEmpty[0] === '[') {
+                if (nonEmpty.length > 1) {
+                    const merged = nonEmpty[0] + ' ' + nonEmpty.slice(1).join(' ');
+                    return merged.length > n ? merged.substring(0, n) + '…' : merged;
+                }
+            }
+            return firstLinePreview(bodyText, n);
+        }
+
+        function addToolStreamItem(data) {
+            let kind;
+            let bodyText;
+            if (data.symbol === 'purpose' || data.symbol === 'tool' || data.symbol === 'result') {
+                kind = data.symbol;
+                bodyText = toolContentToText(data.content);
+            } else {
+                kind = 'unknown';
+                bodyText = toolContentToText(data.content);
+            }
+            const container = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = 'tool-stream-item tool-kind-' + kind;
+            const preview = toolStreamPreview(bodyText, data.content, 140);
+            div.innerHTML = `
+                <div class="tool-stream-header" onclick="this.parentElement.classList.toggle('expanded')">
+                    <span class="tool-stream-badge">${escapeHtml(toolBadgeLabel(kind))}</span>
+                    <span class="tool-stream-preview">${escapeHtml(preview)}</span>
+                    <span class="tool-stream-chevron">▼</span>
+                </div>
+                <div class="tool-stream-body"><pre>${escapeHtml(bodyText)}</pre></div>
+            `;
+            container.appendChild(div);
+            scrollToBottom();
+        }
+
+        function showThinking() {
+            const container = document.getElementById('messages');
+            if (document.querySelector('.thinking')) return;
+            const div = document.createElement('div');
+            div.className = 'thinking';
+            div.innerHTML = `
+                <div class="thinking-dots"><span></span><span></span><span></span></div>
+                <span>思考中...</span>
+            `;
+            container.appendChild(div);
+            scrollToBottom();
+        }
+
+        function removeThinking() {
+            const thinking = document.querySelector('.thinking');
+            if (thinking) thinking.remove();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function scrollToBottom() {
+            const container = document.querySelector('.chat-container');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // ====== 文本输入（符合后端接入格式） ======
+        function sendMessage() {
+            const input = document.getElementById('userInput');
+            const content = input.value.trim();
+            if (!content || !ws || ws.readyState !== WebSocket.OPEN) return;
+            const wantAudioReply = !!document.getElementById('replyAudioChk')?.checked;
+
+            addMessage('user', content);
+            ws.send(JSON.stringify({
+                channel: "cmd",
+                user_id: "test_user",
+                session_id: "test_session",
+                content: content,
+                in_type: "text",
+                out_type: wantAudioReply ? "audio" : "text",
+            }));
+            input.value = '';
+        }
+
+        function handleKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // ====== 语音输入（流式：start + bytes + end） ======
+        function startMicPress() {
+            micPressing = true;
+            if (micRecording) return;
+            startMic();
+        }
+
+        function stopMicPress() {
+            micPressing = false;
+            if (micRecording) stopMicIfNeeded();
+        }
+
+        async function startMic() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            try {
+                const wantAudioReply = !!document.getElementById('replyAudioChk')?.checked;
+                micStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
+                });
+                audioCtxIn = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioCtxIn.createMediaStreamSource(micStream);
+
+                processor = audioCtxIn.createScriptProcessor(4096, 1, 1);
+                source.connect(processor);
+                processor.connect(audioCtxIn.destination);
+
+                micRecording = true;
+
+                ws.send(JSON.stringify({
+                    channel: "cmd",
+                    user_id: "test_user",
+                    session_id: "test_session",
+                    data: {
+                        sample_rate: audioCtxIn.sampleRate,
+                        channels: 1,
+                        format: "pcm_s16le",
+                    },
+                    in_type: "input_audio_start",
+                    out_type: wantAudioReply ? "audio" : "text",
+                }));
+
+                processor.onaudioprocess = (e) => {
+                    if (!micRecording || !micPressing) return;
+                    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                    const input = e.inputBuffer.getChannelData(0);
+                    const pcm16 = floatTo16BitPCM(input);
+                    ws.send(pcm16.buffer);
+                };
+            } catch (e) {
+                addMessage('system', '麦克风启动失败：' + String(e?.message || e));
+                stopMicIfNeeded();
+            }
+        }
+
+        function stopMicIfNeeded() {
+            if (!micRecording) return;
+            micRecording = false;
+            try {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    const wantAudioReply = !!document.getElementById('replyAudioChk')?.checked;
+                    ws.send(JSON.stringify({
+                        channel: "cmd",
+                        user_id: "test_user",
+                        session_id: "test_session",
+                        in_type: "input_audio_end",
+                        out_type: wantAudioReply ? "audio" : "text",
+                    }));
+                }
+            } catch (e) { /* ignore */ }
+
+            try { if (processor) processor.disconnect(); } catch (e) { /* ignore */ }
+            try { if (audioCtxIn) audioCtxIn.close(); } catch (e) { /* ignore */ }
+            processor = null;
+            audioCtxIn = null;
+
+            try { if (micStream) micStream.getTracks().forEach(t => t.stop()); } catch (e) { /* ignore */ }
+            micStream = null;
+        }
+
+        function floatTo16BitPCM(float32Array) {
+            const out = new Int16Array(float32Array.length);
+            for (let i = 0; i < float32Array.length; i++) {
+                let s = Math.max(-1, Math.min(1, float32Array[i]));
+                out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            }
+            return out;
+        }
+
+        // ====== 语音输出（流式：start + bytes + end） ======
+        function beginOutputAudio(meta) {
+            outMeta = {
+                sample_rate: Number(meta.sample_rate || 16000),
+                channels: Number(meta.channels || 1),
+                format: String(meta.format || 'pcm_s16le'),
+            };
+            outQueue = [];
+            outPlaying = false;
+            outNextTime = 0;
+        }
+
+        function endOutputAudio() {
+            outMeta = outMeta || { sample_rate: 16000, channels: 1, format: 'pcm_s16le' };
+        }
+
+        function enqueueOutputPcmChunk(arrayBuffer) {
+            if (!outMeta) return;
+            outQueue.push(arrayBuffer);
+            if (!outPlaying) {
+                outPlaying = true;
+                playOutputQueue();
+            }
+        }
+
+        async function playOutputQueue() {
+            if (!outMeta || outMeta.format !== 'pcm_s16le') { outPlaying = false; return; }
+            if (!audioCtxOut) audioCtxOut = new (window.AudioContext || window.webkitAudioContext)();
+            try { await audioCtxOut.resume(); } catch (e) { /* ignore */ }
+            if (outNextTime === 0) outNextTime = audioCtxOut.currentTime + 0.05;
+
+            while (outQueue.length > 0) {
+                const chunk = outQueue.shift();
+                const floatBuf = pcm16leToFloat32(chunk);
+                const frameCount = floatBuf.length;
+                const audioBuffer = audioCtxOut.createBuffer(1, frameCount, outMeta.sample_rate);
+                audioBuffer.getChannelData(0).set(floatBuf);
+                const src = audioCtxOut.createBufferSource();
+                src.buffer = audioBuffer;
+                src.connect(audioCtxOut.destination);
+                src.start(outNextTime);
+                outNextTime += audioBuffer.duration;
+            }
+
+            setTimeout(() => {
+                if (outQueue.length > 0) { playOutputQueue(); return; }
+                outPlaying = false;
+                outMeta = null;
+                outNextTime = 0;
+            }, 80);
+        }
+
+        function pcm16leToFloat32(arrayBuffer) {
+            const s16 = new Int16Array(arrayBuffer);
+            const f32 = new Float32Array(s16.length);
+            for (let i = 0; i < s16.length; i++) f32[i] = s16[i] / 0x8000;
+            return f32;
+        }
+    </script>
+</body>
+</html>
+
