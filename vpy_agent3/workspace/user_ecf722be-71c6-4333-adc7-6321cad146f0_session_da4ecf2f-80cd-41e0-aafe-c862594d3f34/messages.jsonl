@@ -1,0 +1,6 @@
+{"role": "user", "content": "你好"}
+{"role": "assistant", "content": "你好！有什么可以帮到你的吗？"}
+{"role": "user", "content": "我叫美羊羊"}
+{"role": "assistant", "content": "你好，美羊羊！很高兴认识你。有什么问题或者需要帮助的地方吗？"}
+{"role": "user", "content": "我叫什么"}
+{"role": "assistant", "content": "你叫美羊羊。有什么我可以为你做的吗？"}
